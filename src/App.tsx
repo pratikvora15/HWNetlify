@@ -165,8 +165,8 @@ const regions = ["All", "Ontario", "Ottawa", "Montreal", "Quebec"];
 
 // Google Sheets integration configuration (hidden from users)
 const GOOGLE_SHEETS_CONFIG = {
-  SHEET_ID: 'YOUR_GOOGLE_SHEETS_ID_HERE',
-  API_KEY: 'YOUR_GOOGLE_API_KEY_HERE',
+  SHEET_ID: '1Jhl2fjGTk1_ZHeafHFbGjMzeJ7d4Rm3mANRV9E_CLp0',
+  API_KEY: 'AIzaSyDVxZ1z0qd7KssyHBxhcA04YPDw1AmBSA4',
   RANGE: 'Events!A:J'
 };
 
