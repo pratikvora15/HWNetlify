@@ -199,7 +199,7 @@ function App() {
 
   // Function to fetch data from Google Sheets (hidden from users)
   const fetchFromGoogleSheets = async () => {
-    if (GOOGLE_SHEETS_CONFIG.API_KEY === 'YOUR_GOOGLE_API_KEY_HERE') return;
+    if (GOOGLE_SHEETS_CONFIG.API_KEY === 'AIzaSyDVxZ1z0qd7KssyHBxhcA04YPDw1AmBSA4') return;
     
     setIsLoading(true);
     setError(null);
@@ -243,7 +243,7 @@ function App() {
 
   // Auto-sync every 5 minutes (hidden from users)
   useEffect(() => {
-    if (GOOGLE_SHEETS_CONFIG.API_KEY !== 'YOUR_GOOGLE_API_KEY_HERE') {
+    if (GOOGLE_SHEETS_CONFIG.API_KEY !== 'AIzaSyDVxZ1z0qd7KssyHBxhcA04YPDw1AmBSA4') {
       fetchFromGoogleSheets();
       const interval = setInterval(fetchFromGoogleSheets, 5 * 60 * 1000);
       return () => clearInterval(interval);
