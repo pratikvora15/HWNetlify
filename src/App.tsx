@@ -26,7 +26,7 @@ interface User {
   savedEvents: number[];
 }
 
-// Sample data
+// Sample data as fallback
 const sampleEvents: Event[] = [
   {
     id: 1,
@@ -163,7 +163,7 @@ const sampleEvents: Event[] = [
 const categories = ["All", "Music", "Cultural", "Food", "Winter", "Summer"];
 const regions = ["All", "Ontario", "Ottawa", "Montreal", "Quebec"];
 
-// Google Sheets integration configuration (hidden from users)
+// Hardcoded Google Sheets configuration
 const GOOGLE_SHEETS_CONFIG = {
   SHEET_ID: '1Jhl2fjGTk1_ZHeafHFbGjMzeJ7d4Rm3mANRV9E_CLp0',
   API_KEY: 'AIzaSyDVxZ1z0qd7KssyHBxhcA04YPDw1AmBSA4',
@@ -197,57 +197,118 @@ function App() {
     types: [] as string[]
   });
 
-  // Function to fetch data from Google Sheets (hidden from users)
-  const fetchFromGoogleSheets = async () => {
-    if (GOOGLE_SHEETS_CONFIG.API_KEY === 'AIzaSyDVxZ1z0qd7KssyHBxhcA04YPDw1AmBSA4') return;
+  // Helper function to normalize and validate data
+  const normalizeEventData = (row: string[], index: number): Event => {
+    // Normalize type field - handle common variations
+    const rawType = (row[9] || '').toLowerCase().trim();
+    let normalizedType: 'festival' | 'day-trip' | 'activity' = 'festival';
     
+    // More comprehensive type mapping
+    if (rawType.includes('festival') || rawType.includes('event') || rawType.includes('fest')) {
+      normalizedType = 'festival';
+    } else if (rawType.includes('day-trip') || rawType.includes('day trip') || rawType.includes('daytrip') || 
+               rawType.includes('trip') || rawType.includes('excursion') || rawType.includes('tour')) {
+      normalizedType = 'day-trip';
+    } else if (rawType.includes('activity') || rawType.includes('experience') || 
+               rawType.includes('attraction') || rawType.includes('adventure')) {
+      normalizedType = 'activity';
+    }
+
+    // Normalize status field
+    const rawStatus = (row[8] || '').toLowerCase().trim();
+    let normalizedStatus: 'confirmed' | 'tentative' | 'tba' = 'tba';
+    
+    if (rawStatus.includes('confirmed') || rawStatus.includes('confirm')) {
+      normalizedStatus = 'confirmed';
+    } else if (rawStatus.includes('tentative') || rawStatus.includes('pending')) {
+      normalizedStatus = 'tentative';
+    } else {
+      normalizedStatus = 'tba';
+    }
+
+    const event = {
+      id: index + 1,
+      name: (row[0] || '').trim() || 'Untitled Event',
+      date: (row[1] || '').trim() || 'TBA',
+      location: (row[2] || '').trim() || 'Location TBA',
+      entryFee: (row[3] || '').trim() || 'Price TBA',
+      description: (row[4] || '').trim() || 'Description coming soon',
+      website: (row[5] || '').trim() || '#',
+      category: (row[6] || '').trim() || 'Cultural',
+      region: (row[7] || '').trim() || 'Ontario',
+      status: normalizedStatus,
+      type: normalizedType
+    };
+
+    console.log(`📝 Row ${index + 1}: "${row[0]}" -> Type: "${rawType}" -> Normalized: "${normalizedType}"`);
+    return event;
+  };
+
+  // Function to fetch data from Google Sheets
+  const fetchFromGoogleSheets = async () => {
     setIsLoading(true);
     setError(null);
     
     try {
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_CONFIG.SHEET_ID}/values/${GOOGLE_SHEETS_CONFIG.RANGE}?key=${GOOGLE_SHEETS_CONFIG.API_KEY}`;
       
+      console.log('🔗 Fetching from Google Sheets...');
+      
       const response = await fetch(url);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch data from Google Sheets');
+        const errorText = await response.text();
+        console.error('❌ API Error Response:', errorText);
+        throw new Error(`API Error ${response.status}: ${errorText}`);
       }
       
       const data = await response.json();
+      console.log('📊 Raw Google Sheets data:', data);
       
-      if (data.values && data.values.length > 1) {
-        const sheetEvents: Event[] = data.values.slice(1).map((row: string[], index: number) => ({
-          id: index + 1,
-          name: row[0] || '',
-          date: row[1] || '',
-          location: row[2] || '',
-          entryFee: row[3] || '',
-          description: row[4] || '',
-          website: row[5] || '',
-          category: row[6] || 'Cultural',
-          region: row[7] || 'Ontario',
-          status: (row[8] as 'confirmed' | 'tentative' | 'tba') || 'tba',
-          type: (row[9] as 'festival' | 'day-trip' | 'activity') || 'festival'
-        }));
+      if (data.values && data.values.length > 0) {
+        console.log('📋 Sheet headers:', data.values[0]);
+        console.log('📋 Total rows:', data.values.length);
         
-        setEvents(sheetEvents);
-        setLastSync(new Date());
+        if (data.values.length > 1) {
+          const sheetEvents: Event[] = data.values.slice(1).map((row: string[], index: number) => {
+            return normalizeEventData(row, index);
+          });
+          
+          // Log type distribution for debugging
+          const typeDistribution = sheetEvents.reduce((acc, event) => {
+            acc[event.type] = (acc[event.type] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+          console.log('📊 Type distribution:', typeDistribution);
+          console.log('✅ Events by type:', {
+            festivals: sheetEvents.filter(e => e.type === 'festival').length,
+            dayTrips: sheetEvents.filter(e => e.type === 'day-trip').length,
+            activities: sheetEvents.filter(e => e.type === 'activity').length
+          });
+          
+          setEvents(sheetEvents);
+          setLastSync(new Date());
+        } else {
+          console.log('⚠️ Only headers found, no data rows');
+        }
+      } else {
+        console.log('⚠️ No data found in response');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      console.error('Error fetching from Google Sheets:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(errorMessage);
+      console.error('❌ Error fetching from Google Sheets:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Auto-sync every 5 minutes (hidden from users)
+  // Auto-sync on component mount and every 5 minutes
   useEffect(() => {
-    if (GOOGLE_SHEETS_CONFIG.API_KEY !== 'AIzaSyDVxZ1z0qd7KssyHBxhcA04YPDw1AmBSA4') {
-      fetchFromGoogleSheets();
-      const interval = setInterval(fetchFromGoogleSheets, 5 * 60 * 1000);
-      return () => clearInterval(interval);
-    }
+    console.log('🚀 App mounted, starting initial fetch');
+    fetchFromGoogleSheets();
+    const interval = setInterval(fetchFromGoogleSheets, 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
   // Authentication functions
@@ -314,6 +375,14 @@ function App() {
   };
 
   const filteredEvents = useMemo(() => {
+    console.log('🔍 Filtering events:', {
+      totalEvents: events.length,
+      activeTab,
+      searchTerm,
+      selectedCategory,
+      selectedRegion
+    });
+
     let filtered = events.filter(event => {
       const matchesSearch = event.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           event.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -325,21 +394,41 @@ function App() {
       return matchesSearch && matchesCategory && matchesRegion && matchesType;
     });
 
+    console.log(`🎯 Filtered events for ${activeTab}:`, filtered.length);
+
     // If user is logged in and has preferences, prioritize matching events
-    if (isLoggedIn && currentUser) {
+    if (isLoggedIn && currentUser && currentUser.preferences) {
+      const { categories, regions, types } = currentUser.preferences;
+      
+      // Separate events into preferred and non-preferred
       const preferredEvents = filtered.filter(event => 
-        currentUser.preferences.categories.includes(event.category) ||
-        currentUser.preferences.regions.includes(event.region)
+        (categories.length === 0 || categories.includes(event.category)) &&
+        (regions.length === 0 || regions.includes(event.region)) &&
+        (types.length === 0 || types.includes(event.type))
       );
+      
       const otherEvents = filtered.filter(event => 
-        !currentUser.preferences.categories.includes(event.category) &&
-        !currentUser.preferences.regions.includes(event.region)
+        !((categories.length === 0 || categories.includes(event.category)) &&
+          (regions.length === 0 || regions.includes(event.region)) &&
+          (types.length === 0 || types.includes(event.type)))
       );
+      
       return [...preferredEvents, ...otherEvents];
     }
 
     return filtered;
   }, [events, searchTerm, selectedCategory, selectedRegion, activeTab, isLoggedIn, currentUser]);
+
+  // Check if an event matches user preferences
+  const isPreferredEvent = (event: Event): boolean => {
+    if (!isLoggedIn || !currentUser || !currentUser.preferences) return false;
+    
+    const { categories, regions, types } = currentUser.preferences;
+    
+    return (categories.length === 0 || categories.includes(event.category)) &&
+           (regions.length === 0 || regions.includes(event.region)) &&
+           (types.length === 0 || types.includes(event.type));
+  };
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -423,7 +512,7 @@ function App() {
                         </button>
                         <button className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-blue-50 flex items-center space-x-3 transition-colors duration-200">
                           <Heart className="w-4 h-4 text-blue-600" />
-                          <span>Saved Events</span>
+                          <span>Saved Events ({currentUser?.savedEvents.length || 0})</span>
                         </button>
                         <div className="border-t border-gray-100">
                           <button
@@ -544,116 +633,129 @@ function App() {
           </div>
         </div>
 
-        {/* Results Count */}
+        {/* Results Count and Status */}
         <div className="mb-6 flex items-center justify-between">
-          <p className="text-gray-600">
-            Showing <span className="font-semibold text-gray-900">{filteredEvents.length}</span> {activeTab}s
-          </p>
+          <div className="flex items-center space-x-4">
+            <p className="text-gray-600">
+              Showing <span className="font-semibold text-gray-900">{filteredEvents.length}</span> {activeTab}s
+            </p>
+            {isLoading && (
+              <div className="flex items-center space-x-2 text-blue-600">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Syncing...</span>
+              </div>
+            )}
+            {error && (
+              <div className="flex items-center space-x-2 text-red-600">
+                <AlertCircle className="w-4 h-4" />
+                <span className="text-sm">Using cached data</span>
+              </div>
+            )}
+            {lastSync && !isLoading && (
+              <span className="text-sm text-green-600">
+                Last updated: {lastSync.toLocaleTimeString()}
+              </span>
+            )}
+          </div>
           {isLoggedIn && currentUser && (
             <p className="text-sm text-blue-600">
-              {filteredEvents.filter(event => 
-                currentUser.preferences.categories.includes(event.category) ||
-                currentUser.preferences.regions.includes(event.region)
-              ).length} match your preferences
+              {filteredEvents.filter(event => isPreferredEvent(event)).length} match your preferences
             </p>
           )}
         </div>
 
         {/* Events Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredEvents.map((event) => (
-            <div
-              key={event.id}
-              className={`bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 border ${
-                isLoggedIn && currentUser && (
-                  currentUser.preferences.categories.includes(event.category) ||
-                  currentUser.preferences.regions.includes(event.region)
-                ) ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-100'
-              }`}
-            >
-              <div className="p-6">
-                {/* Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center space-x-2">
-                    {getTypeIcon(event.type)}
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeColor(event.type)}`}>
-                      {event.type.toUpperCase()}
-                    </span>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(event.status)}`}>
-                      {event.status.toUpperCase()}
-                    </span>
+          {filteredEvents.map((event) => {
+            const isPreferred = isPreferredEvent(event);
+            const isSaved = currentUser?.savedEvents.includes(event.id);
+            
+            return (
+              <div
+                key={event.id}
+                className={`bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 border ${
+                  isPreferred ? 'border-blue-200 ring-2 ring-blue-100' : 'border-gray-100'
+                }`}
+              >
+                <div className="p-6">
+                  {/* Header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center space-x-2">
+                      {getTypeIcon(event.type)}
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeColor(event.type)}`}>
+                        {event.type.toUpperCase()}
+                      </span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(event.status)}`}>
+                        {event.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full flex items-center space-x-1">
+                        {getCategoryIcon(event.category)}
+                        <span>{event.category}</span>
+                      </span>
+                      {isLoggedIn && (
+                        <button
+                          onClick={() => toggleSaveEvent(event.id)}
+                          className={`p-1 rounded-full transition-colors duration-200 ${
+                            isSaved
+                              ? 'text-red-500 hover:text-red-600'
+                              : 'text-gray-400 hover:text-red-500'
+                          }`}
+                        >
+                          <Heart className={`w-4 h-4 ${isSaved ? 'fill-current' : ''}`} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full flex items-center space-x-1">
-                      {getCategoryIcon(event.category)}
-                      <span>{event.category}</span>
-                    </span>
-                    {isLoggedIn && (
-                      <button
-                        onClick={() => toggleSaveEvent(event.id)}
-                        className={`p-1 rounded-full transition-colors duration-200 ${
-                          currentUser?.savedEvents.includes(event.id)
-                            ? 'text-red-500 hover:text-red-600'
-                            : 'text-gray-400 hover:text-red-500'
-                        }`}
-                      >
-                        <Heart className={`w-4 h-4 ${
-                          currentUser?.savedEvents.includes(event.id) ? 'fill-current' : ''
-                        }`} />
-                      </button>
+
+                  {/* Event Name */}
+                  <h3 className="text-xl font-bold text-gray-900 mb-3 line-clamp-2">
+                    {event.name}
+                    {isPreferred && (
+                      <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
+                        Recommended
+                      </span>
                     )}
+                  </h3>
+
+                  {/* Date */}
+                  <div className="flex items-center space-x-2 mb-3">
+                    <Calendar className="w-4 h-4 text-blue-500" />
+                    <span className="text-sm font-medium text-gray-700">{event.date}</span>
                   </div>
+
+                  {/* Location */}
+                  <div className="flex items-center space-x-2 mb-3">
+                    <MapPin className="w-4 h-4 text-green-500" />
+                    <span className="text-sm text-gray-600">{event.location}</span>
+                  </div>
+
+                  {/* Entry Fee */}
+                  <div className="flex items-center space-x-2 mb-4">
+                    <DollarSign className="w-4 h-4 text-yellow-500" />
+                    <span className="text-sm text-gray-600">{event.entryFee}</span>
+                  </div>
+
+                  {/* Description */}
+                  <p className="text-sm text-gray-600 mb-4 line-clamp-3">
+                    {event.description}
+                  </p>
+
+                  {/* Website Link */}
+                  <a
+                    href={event.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center space-x-2 text-blue-600 hover:text-blue-800 font-medium transition-colors duration-200"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span className="text-sm">Visit Website</span>
+                  </a>
                 </div>
-
-                {/* Event Name */}
-                <h3 className="text-xl font-bold text-gray-900 mb-3 line-clamp-2">
-                  {event.name}
-                  {isLoggedIn && currentUser && (
-                    currentUser.preferences.categories.includes(event.category) ||
-                    currentUser.preferences.regions.includes(event.region)
-                  ) && (
-                    <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
-                      Recommended
-                    </span>
-                  )}
-                </h3>
-
-                {/* Date */}
-                <div className="flex items-center space-x-2 mb-3">
-                  <Calendar className="w-4 h-4 text-blue-500" />
-                  <span className="text-sm font-medium text-gray-700">{event.date}</span>
-                </div>
-
-                {/* Location */}
-                <div className="flex items-center space-x-2 mb-3">
-                  <MapPin className="w-4 h-4 text-green-500" />
-                  <span className="text-sm text-gray-600">{event.location}</span>
-                </div>
-
-                {/* Entry Fee */}
-                <div className="flex items-center space-x-2 mb-4">
-                  <DollarSign className="w-4 h-4 text-yellow-500" />
-                  <span className="text-sm text-gray-600">{event.entryFee}</span>
-                </div>
-
-                {/* Description */}
-                <p className="text-sm text-gray-600 mb-4 line-clamp-3">
-                  {event.description}
-                </p>
-
-                {/* Website Link */}
-                <a
-                  href={event.website}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center space-x-2 text-blue-600 hover:text-blue-800 font-medium transition-colors duration-200"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  <span className="text-sm">Visit Website</span>
-                </a>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* No Results */}
