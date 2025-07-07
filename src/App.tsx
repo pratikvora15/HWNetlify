@@ -160,7 +160,7 @@ const sampleEvents: Event[] = [
   }
 ];
 
-const categories = ["All", "Music", "Cultural", "Food", "Winter", "Summer"];
+const categories = ["All", "Music", "Cultural", "Food", "Winter", "Summer","Adventure Festivals","Art & Craft Festivals","Seasonal Festivals", "Unique Festivals", "Family & Children's Festivals" ];
 const regions = ["All", "Ontario", "Ottawa", "Montreal", "Quebec"];
 
 // Hardcoded Google Sheets configuration
